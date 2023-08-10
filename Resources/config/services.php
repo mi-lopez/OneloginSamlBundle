@@ -22,6 +22,7 @@ return static function (ContainerConfigurator $container): void {
         ->parent(service('security.authentication.listener.abstract'))
         ->abstract()
         ->call('setOneLoginAuth', [service(\OneLogin\Saml2\Auth::class)])
+        ->call('setEntityManager', [service(\Doctrine\ORM\EntityManagerInterface::class)])
     ;
 
     $services->set(\Hslavich\OneloginSamlBundle\Security\Http\Authenticator\SamlAuthenticator::class)

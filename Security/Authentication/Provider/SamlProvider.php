@@ -2,6 +2,7 @@
 
 namespace Hslavich\OneloginSamlBundle\Security\Authentication\Provider;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Hslavich\OneloginSamlBundle\Event\UserCreatedEvent;
 use Hslavich\OneloginSamlBundle\Event\UserModifiedEvent;
 use Hslavich\OneloginSamlBundle\Security\Authentication\Token\SamlTokenFactoryInterface;
@@ -14,21 +15,29 @@ use Symfony\Component\Security\Core\Exception\AuthenticationException;
 use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 use Symfony\Component\Security\Core\User\UserProviderInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use Synolia\Custom\MigrationBundle\Traits\OrganizationManagerTrait;
 
 /**
  * @deprecated since 2.1
  */
 class SamlProvider implements AuthenticationProviderInterface
 {
+    use OrganizationManagerTrait;
+
     protected $userProvider;
     protected $userFactory;
     protected $tokenFactory;
     protected $eventDispatcher;
+    protected $entityManager;
 
-    public function __construct(UserProviderInterface $userProvider, ?EventDispatcherInterface $eventDispatcher)
-    {
+    public function __construct(
+        UserProviderInterface $userProvider,
+        ?EventDispatcherInterface $eventDispatcher,
+        EntityManagerInterface $entityManager
+    ) {
         $this->userProvider = $userProvider;
         $this->eventDispatcher = $eventDispatcher;
+        $this->entityManager = $entityManager;
     }
 
     public function setUserFactory(SamlUserFactoryInterface $userFactory)
@@ -53,7 +62,14 @@ class SamlProvider implements AuthenticationProviderInterface
                 }
             }
 
-            $authenticatedToken = $this->tokenFactory->createToken($user, $token->getAttributes(), $user->getRoles());
+            $organization = $this->getOrganization($this->entityManager);
+
+            $authenticatedToken = $this->tokenFactory->createToken(
+                $user,
+                $token->getAttributes(),
+                $user->getRoles(),
+                $organization
+            );
             $authenticatedToken->setAuthenticated(true);
 
             return $authenticatedToken;

@@ -2,22 +2,31 @@
 
 namespace Hslavich\OneloginSamlBundle\Security\Firewall;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Hslavich\OneloginSamlBundle\Security\Authentication\Token\SamlToken;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
 use Symfony\Component\Security\Http\Firewall\AbstractAuthenticationListener;
+use Synolia\Custom\MigrationBundle\Traits\OrganizationManagerTrait;
 
 /**
  * @deprecated since 2.1
  */
 class SamlListener extends AbstractAuthenticationListener
 {
+    use OrganizationManagerTrait;
+
     /**
      * @var \OneLogin\Saml2\Auth
      */
     protected $oneLoginAuth;
+
+    /**
+     * @var EntityManagerInterface
+     */
+    protected $entityManager;
 
     /**
      * @param \OneLogin\Saml2\Auth $oneLoginAuth
@@ -25,6 +34,11 @@ class SamlListener extends AbstractAuthenticationListener
     public function setOneLoginAuth(\OneLogin\Saml2\Auth $oneLoginAuth)
     {
         $this->oneLoginAuth = $oneLoginAuth;
+    }
+
+    public function setEntityManager(EntityManagerInterface $entityManager)
+    {
+        $this->entityManager = $entityManager;
     }
 
     /**
@@ -67,7 +81,11 @@ class SamlListener extends AbstractAuthenticationListener
         } else {
             $username = $this->oneLoginAuth->getNameId();
         }
+
+        $organization = $this->getOrganization($this->entityManager);
+
         $token->setUser($username);
+        $token->setOrganization($organization);
 
         return $this->authenticationManager->authenticate($token);
     }

@@ -2,6 +2,7 @@
 
 namespace Hslavich\OneloginSamlBundle\DependencyInjection\Security\Factory;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Hslavich\OneloginSamlBundle\Event\UserCreatedEvent;
 use Hslavich\OneloginSamlBundle\Event\UserModifiedEvent;
 use Hslavich\OneloginSamlBundle\EventListener\User\UserCreatedListener;
@@ -141,6 +142,7 @@ class SamlFactory implements SecurityFactoryInterface, AuthenticatorFactoryInter
             ->setArguments([
                 new Reference($userProviderId),
                 new Reference(EventDispatcherInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                new Reference(EntityManagerInterface::class)
             ])
         ;
 

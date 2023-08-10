@@ -13,8 +13,9 @@ interface SamlTokenFactoryInterface
      * @param mixed $user
      * @param array $attributes
      * @param array $roles
+     * @param mixed $organization
      *
      * @return SamlTokenInterface
      */
-    public function createToken($user, array $attributes, array $roles);
+    public function createToken($user, array $attributes, array $roles, $organization);
 }
