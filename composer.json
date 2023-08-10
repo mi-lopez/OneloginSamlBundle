@@ -1,5 +1,5 @@
 {
-    "name": "hslavich/oneloginsaml-bundle",
+    "name": "mi-lopez/oneloginsaml-bundle",
     "type": "symfony-bundle",
     "description": "OneLogin SAML Bundle for Symfony",
     "keywords": [
@@ -12,6 +12,10 @@
         {
             "name": "hslavich",
             "email": "hernan.slavich@gmail.com"
+        },
+        {
+            "name": "mi-lopez",
+            "email": "miguel.lopezt86@gmail.com"
         }
     ],
     "require": {
