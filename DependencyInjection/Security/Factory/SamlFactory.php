@@ -24,7 +24,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 class SamlFactory implements SecurityFactoryInterface, AuthenticatorFactoryInterface
 {
-    protected $options = [
+    protected array $options = [
         'check_path' => 'saml_acs',
         'use_forward' => false,
         'require_previous_session' => false,
@@ -38,7 +38,7 @@ class SamlFactory implements SecurityFactoryInterface, AuthenticatorFactoryInter
         'success_handler' => SamlAuthenticationSuccessHandler::class,
     ];
 
-    protected $defaultSuccessHandlerOptions = [
+    protected array $defaultSuccessHandlerOptions = [
         'always_use_default_target_path' => false,
         'default_target_path' => '/',
         'login_path' => 'saml_login',
@@ -46,7 +46,7 @@ class SamlFactory implements SecurityFactoryInterface, AuthenticatorFactoryInter
         'use_referer' => false,
     ];
 
-    protected $defaultFailureHandlerOptions = [
+    protected array $defaultFailureHandlerOptions = [
         'failure_path' => null,
         'failure_forward' => false,
         'login_path' => 'saml_login',
@@ -61,8 +61,7 @@ class SamlFactory implements SecurityFactoryInterface, AuthenticatorFactoryInter
             ->scalarNode('provider')->end()
             ->booleanNode('remember_me')->defaultTrue()->end()
             ->scalarNode('success_handler')->end()
-            ->scalarNode('failure_handler')->end()
-        ;
+            ->scalarNode('failure_handler')->end();
 
         foreach (array_merge($this->options, $this->defaultSuccessHandlerOptions, $this->defaultFailureHandlerOptions) as $name => $default) {
             if (\is_bool($default)) {
@@ -115,14 +114,13 @@ class SamlFactory implements SecurityFactoryInterface, AuthenticatorFactoryInter
 
     public function createAuthenticator(ContainerBuilder $container, string $firewallName, array $config, string $userProviderId): string
     {
-        $authenticatorId = 'security.authenticator.saml.'.$firewallName;
+        $authenticatorId = 'security.authenticator.saml.' . $firewallName;
         $authenticator = (new ChildDefinition(SamlAuthenticator::class))
             ->replaceArgument(0, new Reference(HttpUtils::class))
             ->replaceArgument(1, new Reference($userProviderId))
             ->replaceArgument(3, new Reference($this->createAuthenticationSuccessHandler($container, $firewallName, $config)))
             ->replaceArgument(4, new Reference($this->createAuthenticationFailureHandler($container, $firewallName, $config)))
-            ->replaceArgument(5, array_intersect_key($config, $this->options))
-        ;
+            ->replaceArgument(5, array_intersect_key($config, $this->options));
 
         if ($config['user_factory']) {
             $authenticator->replaceArgument(6, new Reference($config['user_factory']));
@@ -137,14 +135,13 @@ class SamlFactory implements SecurityFactoryInterface, AuthenticatorFactoryInter
 
     protected function createAuthProvider(ContainerBuilder $container, $id, $config, $userProviderId): string
     {
-        $providerId = 'security.authentication.provider.saml.'.$id;
+        $providerId = 'security.authentication.provider.saml.' . $id;
         $definition = $container->setDefinition($providerId, new ChildDefinition(SamlProvider::class))
             ->setArguments([
                 new Reference($userProviderId),
                 new Reference(EventDispatcherInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
-                new Reference(EntityManagerInterface::class)
-            ])
-        ;
+                new Reference(EntityManagerInterface::class),
+            ]);
 
         if ($config['user_factory']) {
             $definition->addMethodCall('setUserFactory', [new Reference($config['user_factory'])]);
@@ -152,6 +149,7 @@ class SamlFactory implements SecurityFactoryInterface, AuthenticatorFactoryInter
 
         $factoryId = $config['token_factory'] ?: SamlTokenFactoryInterface::class;
         $definition->addMethodCall('setTokenFactory', [new Reference($factoryId)]);
+        $definition->addMethodCall('setCustomerUserProvider', [new Reference('oro_customer.security.provider')]);
 
         return $providerId;
     }
@@ -163,10 +161,9 @@ class SamlFactory implements SecurityFactoryInterface, AuthenticatorFactoryInter
             ->replaceArgument(4, $id)
             ->replaceArgument(5, new Reference($this->createAuthenticationSuccessHandler($container, $id, $config)))
             ->replaceArgument(6, new Reference($this->createAuthenticationFailureHandler($container, $id, $config)))
-            ->replaceArgument(7, array_intersect_key($config, $this->options))
-        ;
+            ->replaceArgument(7, array_intersect_key($config, $this->options));
 
-        $listenerId .= '.'.$id;
+        $listenerId .= '.' . $id;
         $container->setDefinition($listenerId, $listener);
 
         return $listenerId;
@@ -179,13 +176,12 @@ class SamlFactory implements SecurityFactoryInterface, AuthenticatorFactoryInter
 
     protected function createEntryPoint(ContainerBuilder $container, string $id, array $config): ?string
     {
-        $entryPointId = 'security.authentication.form_entry_point.'.$id;
+        $entryPointId = 'security.authentication.form_entry_point.' . $id;
         $container
             ->setDefinition($entryPointId, new ChildDefinition('security.authentication.form_entry_point'))
             ->addArgument(new Reference(HttpUtils::class))
             ->addArgument($config['login_path'])
-            ->addArgument($config['use_forward'])
-        ;
+            ->addArgument($config['use_forward']);
 
         return $entryPointId;
     }
@@ -222,26 +218,24 @@ class SamlFactory implements SecurityFactoryInterface, AuthenticatorFactoryInter
 
     protected function getSuccessHandlerId(string $id): string
     {
-        return 'security.authentication.success_handler.'.$id.'.'.str_replace('-', '_', $this->getKey());
+        return 'security.authentication.success_handler.' . $id . '.' . str_replace('-', '_', $this->getKey());
     }
 
     protected function getFailureHandlerId(string $id): string
     {
-        return 'security.authentication.failure_handler.'.$id.'.'.str_replace('-', '_', $this->getKey());
+        return 'security.authentication.failure_handler.' . $id . '.' . str_replace('-', '_', $this->getKey());
     }
 
     protected function createUserListeners(ContainerBuilder $container, string $firewallName, array $config): void
     {
-        $container->setDefinition('hslavich_onelogin_saml.user_created_listener.'.$firewallName, new ChildDefinition(UserCreatedListener::class))
+        $container->setDefinition('hslavich_onelogin_saml.user_created_listener.' . $firewallName, new ChildDefinition(UserCreatedListener::class))
             ->replaceArgument(1, $config['persist_user'])
             ->addTag('hslavich.saml_user_listener')
-            ->addTag('kernel.event_listener', ['event' => UserCreatedEvent::class])
-        ;
+            ->addTag('kernel.event_listener', ['event' => UserCreatedEvent::class]);
 
-        $container->setDefinition('hslavich_onelogin_saml.user_modified_listener.'.$firewallName, new ChildDefinition(UserModifiedListener::class))
+        $container->setDefinition('hslavich_onelogin_saml.user_modified_listener.' . $firewallName, new ChildDefinition(UserModifiedListener::class))
             ->replaceArgument(1, $config['persist_user'])
             ->addTag('hslavich.saml_user_listener')
-            ->addTag('kernel.event_listener', ['event' => UserModifiedEvent::class])
-        ;
+            ->addTag('kernel.event_listener', ['event' => UserModifiedEvent::class]);
     }
 }

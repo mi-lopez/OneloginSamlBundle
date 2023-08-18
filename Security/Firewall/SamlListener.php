@@ -4,8 +4,10 @@ namespace Hslavich\OneloginSamlBundle\Security\Firewall;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Hslavich\OneloginSamlBundle\Security\Authentication\Token\SamlToken;
+use OneLogin\Saml2\Auth;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
 use Symfony\Component\Security\Http\Firewall\AbstractAuthenticationListener;
@@ -18,68 +20,79 @@ class SamlListener extends AbstractAuthenticationListener
 {
     use OrganizationManagerTrait;
 
-    /**
-     * @var \OneLogin\Saml2\Auth
-     */
-    protected $oneLoginAuth;
+    protected Auth $oneLoginAuth;
+    protected Auth $oneLoginCustomerAuth;
+    protected EntityManagerInterface $entityManager;
+    protected RouterInterface $router;
 
-    /**
-     * @var EntityManagerInterface
-     */
-    protected $entityManager;
-
-    /**
-     * @param \OneLogin\Saml2\Auth $oneLoginAuth
-     */
-    public function setOneLoginAuth(\OneLogin\Saml2\Auth $oneLoginAuth)
+    public function setOneLoginAuth(Auth $oneLoginAuth): void
     {
         $this->oneLoginAuth = $oneLoginAuth;
     }
 
-    public function setEntityManager(EntityManagerInterface $entityManager)
+    public function setOneLoginCustomerAuth(Auth $oneLoginAuth): void
+    {
+        $this->oneLoginCustomerAuth = $oneLoginAuth;
+    }
+
+    public function setEntityManager(EntityManagerInterface $entityManager): void
     {
         $this->entityManager = $entityManager;
+    }
+
+    public function setRouter(RouterInterface $router): void
+    {
+        $this->router = $router;
     }
 
     /**
      * Performs authentication.
      *
-     * @param Request $request A Request instance
-     * @return TokenInterface|Response|null The authenticated token, null if full authentication is not possible, or a Response
-     *
      * @throws AuthenticationException if the authentication fails
      * @throws \Exception if attribute set by "username_attribute" option not found
      */
-    protected function attemptAuthentication(Request $request)
+    protected function attemptAuthentication(Request $request): TokenInterface|Response|null
     {
-        $this->oneLoginAuth->processResponse();
-        if ($this->oneLoginAuth->getErrors()) {
-            if (null !== $this->logger) {
-                $this->logger->error($this->oneLoginAuth->getLastErrorReason());
-            }
-            throw new AuthenticationException($this->oneLoginAuth->getLastErrorReason());
+        $array = explode('.', trim($request->attributes->get('_firewall_context')));
+        $firewallName = end($array);
+        switch ($firewallName) {
+            case 'main':
+                $auth = $this->oneLoginAuth;
+                break;
+            case 'frontend':
+                $auth = $this->oneLoginCustomerAuth;
+                break;
+            default:
+                $message = sprintf('Firewall %s not supported by saml authentication', $firewallName);
+                $this->logger?->error(sprintf("[SAML] %s", $message));
+
+                throw new AuthenticationException($message);
         }
 
-        if (isset($this->options['use_attribute_friendly_name']) && $this->options['use_attribute_friendly_name']) {
-            $attributes = $this->oneLoginAuth->getAttributesWithFriendlyName();
-        } else {
-            $attributes = $this->oneLoginAuth->getAttributes();
+        $auth->processResponse();
+        if ($auth->getErrors()) {
+            $this->logger?->error(sprintf("[SAML] %s", $auth->getLastErrorReason()));
+
+            throw new AuthenticationException($auth->getLastErrorReason());
         }
-        $attributes['sessionIndex'] = $this->oneLoginAuth->getSessionIndex();
+
+        $attributes = isset($this->options['use_attribute_friendly_name']) && $this->options['use_attribute_friendly_name']
+            ? $auth->getAttributesWithFriendlyName()
+            : $auth->getAttributes();
+        $attributes['sessionIndex'] = $auth->getSessionIndex();
+        $attributes['firewall'] = $firewallName;
+
         $token = new SamlToken();
         $token->setAttributes($attributes);
 
+        $username = $auth->getNameId();
         if (isset($this->options['username_attribute'])) {
             if (!array_key_exists($this->options['username_attribute'], $attributes)) {
-                if (null !== $this->logger) {
-                    $this->logger->error(sprintf("Found attributes: %s", print_r($attributes, true)));
-                }
+                $this->logger?->error(sprintf("[SAML] Attribute '%s' not found in SAML data. Found attributes: %s", $this->options['username_attribute'], print_r($attributes, true)));
+
                 throw new \RuntimeException(sprintf("Attribute '%s' not found in SAML data", $this->options['username_attribute']));
             }
-
             $username = $attributes[$this->options['username_attribute']][0];
-        } else {
-            $username = $this->oneLoginAuth->getNameId();
         }
 
         $organization = $this->getOrganization($this->entityManager);

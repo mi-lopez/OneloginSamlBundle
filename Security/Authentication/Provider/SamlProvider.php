@@ -11,8 +11,7 @@ use Hslavich\OneloginSamlBundle\Security\User\SamlUserFactoryInterface;
 use Hslavich\OneloginSamlBundle\Security\User\SamlUserInterface;
 use Symfony\Component\Security\Core\Authentication\Provider\AuthenticationProviderInterface;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
-use Symfony\Component\Security\Core\Exception\AuthenticationException;
-use Symfony\Component\Security\Core\Exception\UserNotFoundException;
+use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Security\Core\User\UserProviderInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Synolia\Custom\MigrationBundle\Traits\OrganizationManagerTrait;
@@ -24,84 +23,74 @@ class SamlProvider implements AuthenticationProviderInterface
 {
     use OrganizationManagerTrait;
 
-    protected $userProvider;
-    protected $userFactory;
-    protected $tokenFactory;
-    protected $eventDispatcher;
-    protected $entityManager;
+    protected SamlUserFactoryInterface $userFactory;
+    protected SamlTokenFactoryInterface $tokenFactory;
+    protected UserProviderInterface $customerUserProvider;
 
     public function __construct(
-        UserProviderInterface $userProvider,
-        ?EventDispatcherInterface $eventDispatcher,
-        EntityManagerInterface $entityManager
+        protected UserProviderInterface $userProvider,
+        protected ?EventDispatcherInterface $eventDispatcher,
+        protected EntityManagerInterface $entityManager
     ) {
-        $this->userProvider = $userProvider;
-        $this->eventDispatcher = $eventDispatcher;
-        $this->entityManager = $entityManager;
     }
 
-    public function setUserFactory(SamlUserFactoryInterface $userFactory)
+    public function setUserFactory(SamlUserFactoryInterface $userFactory): void
     {
         $this->userFactory = $userFactory;
     }
 
-    public function setTokenFactory(SamlTokenFactoryInterface $tokenFactory)
+    public function setTokenFactory(SamlTokenFactoryInterface $tokenFactory): void
     {
         $this->tokenFactory = $tokenFactory;
     }
 
-    public function authenticate(TokenInterface $token)
+    public function setCustomerUserProvider(UserProviderInterface $userProvider): void
+    {
+        $this->customerUserProvider = $userProvider;
+    }
+
+    public function authenticate(TokenInterface $token): TokenInterface
     {
         $user = $this->retrieveUser($token);
 
-        if ($user) {
-            if ($user instanceof SamlUserInterface) {
-                $user->setSamlAttributes($token->getAttributes());
-                if ($this->eventDispatcher) {
-                    $this->eventDispatcher->dispatch(new UserModifiedEvent($user));
-                }
-            }
-
-            $organization = $this->getOrganization($this->entityManager);
-
-            $authenticatedToken = $this->tokenFactory->createToken(
-                $user,
-                $token->getAttributes(),
-                $user->getRoles(),
-                $organization
-            );
-            $authenticatedToken->setAuthenticated(true);
-
-            return $authenticatedToken;
+        if ($user instanceof SamlUserInterface) {
+            $user->setSamlAttributes($token->getAttributes());
+            $this->eventDispatcher?->dispatch(new UserModifiedEvent($user));
         }
 
-        throw new AuthenticationException('The authentication failed.');
+        $organization = $this->getOrganization($this->entityManager);
+
+        $authenticatedToken = $this->tokenFactory->createToken(
+            $user,
+            $token->getAttributes(),
+            $user->getRoles(),
+            $organization
+        );
+        $authenticatedToken->setAuthenticated(true);
+
+        return $authenticatedToken;
     }
 
-    public function supports(TokenInterface $token)
+    public function supports(TokenInterface $token): bool
     {
         return $token instanceof SamlTokenInterface;
     }
 
-    protected function retrieveUser($token)
+    protected function retrieveUser($token): UserInterface
     {
-        try {
-            return $this->userProvider->loadUserByUsername($token->getUserIdentifier());
-        } catch (UserNotFoundException $e) {
-            if ($this->userFactory instanceof SamlUserFactoryInterface) {
-                return $this->generateUser($token);
-            }
+        $firewall = $token->getAttributes()['firewall'] ?? null;
 
-            throw $e;
-        }
+        $userProvider = 'frontend' === $firewall
+            ? $this->customerUserProvider
+            : $this->userProvider;
+
+        return $userProvider->loadUserByUsername($token->getUserIdentifier());
     }
 
-    protected function generateUser($token)
+    protected function generateUser($token): UserInterface
     {
         $user = $this->userFactory->createUser($token);
-        if ($this->eventDispatcher) {
-            $this->eventDispatcher->dispatch(new UserCreatedEvent($user));
-        }
+        $this->eventDispatcher?->dispatch(new UserCreatedEvent($user));
 
         return $user;
     }
